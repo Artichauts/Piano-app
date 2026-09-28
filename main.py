@@ -1,7 +1,13 @@
 from collections import deque
 import numpy as np
 import pyqtgraph as pg
-from PyQt6.QtCore import QThread, pyqtSignal, QObject, QTimer
+
+import random
+import time
+
+from pathlib import Path
+from PyQt6.QtMultimedia import QSoundEffect
+from PyQt6.QtCore import QThread, pyqtSignal, QObject, QTimer, QUrl
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout
 
 from userfunctions.RecordMicro import record_audio
@@ -17,6 +23,15 @@ N_POS = GRID[0] * GRID[1]                # 400 positions
 
 rng = np.random.default_rng(0)
 matrix = rng.standard_normal((N_POS, N_SAMPLES))  
+
+NOTES_DIR = Path(__file__).parent / "Wav-Notes"      # folder next to your script
+NOTE_FILES = sorted(NOTES_DIR.glob("*.wav"))
+COOLDOWN = 1.0          
+
+
+
+
+
 
 class SDRWorker(QObject):
     end_of_run = pyqtSignal()
@@ -83,6 +98,12 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.corr_plot, stretch=2)
         self.setCentralWidget(central)
 
+
+        # ---- Sound ----
+        self.sound = QSoundEffect()
+        self.sound.setVolume(1.0)
+        self.last_play = 0.0
+
         # ---- Worker thread ----
         self.sdr_thread = QThread()
         self.worker = SDRWorker()
@@ -94,6 +115,16 @@ class MainWindow(QMainWindow):
         self.sdr_thread.started.connect(self.worker.run)
         self.sdr_thread.start()
 
+    def play_random_note(self):
+        if not NOTE_FILES or time.monotonic() - self.last_play < COOLDOWN:
+            return None
+        f = random.choice(NOTE_FILES)
+        print(f"Playing note: {f.stem}")
+        self.sound.setSource(QUrl.fromLocalFile(str(f.resolve())))
+        self.sound.play()
+        self.last_play = time.monotonic()
+        return f.stem
+    
     def on_result(self, data, corr_map, note):
         # Real-time signal
         if data.ndim > 1:
@@ -101,11 +132,12 @@ class MainWindow(QMainWindow):
         t = np.arange(len(data)) / FS - T
         self.curve.setData(t, data)
 
-        # Correlation map: only updated when the threshold was crossed,
-        # otherwise the last map stays on screen
         if corr_map is not None:
             self.corr_img.setImage(np.asarray(corr_map), autoLevels=True)
-            self.corr_plot.setTitle(f"Correlation map, note: {note}")
+            played = self.play_random_note()
+            self.corr_plot.setTitle(
+                f"Correlation map, note: {note}" + (f" | played: {played}" if played else ""))
+            
 
     def closeEvent(self, event):
         self.sdr_thread.quit()
