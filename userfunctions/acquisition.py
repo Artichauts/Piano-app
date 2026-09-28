@@ -7,13 +7,13 @@ import numpy as np
 import sounddevice as sd
 
 # ---------- Paramètres ----------
-FS = 44100               # Fréquence d'échantillonnage [Hz] (doit correspondre à votre acquisition)
+FS = 48000               # Fréquence d'échantillonnage [Hz] (doit correspondre à votre acquisition)
 BLOCK = 256              # Taille des blocs audio
 SEUIL = 0.25             # Seuil de déclenchement (signal normalisé entre -1 et 1)
 T_AVANT = 0.1            # Durée gardée avant le déclenchement [s]
 T_APRES = 0.4            # Durée gardée après le déclenchement [s]
-DOSSIER = Path("banque_donnees")
-APERCU = True            # Afficher le signal avant de le nommer
+DOSSIER = Path("Piano\\Piano-app\\userfunctions\\banque_donnees")
+APERCU = False            # Afficher le signal avant de le nommer
 
 
 def creer_flux(q, fs=FS, block=BLOCK):
