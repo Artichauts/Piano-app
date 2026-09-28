@@ -149,3 +149,37 @@ print(f"resolution de ({np.mean(mean_fwhm)} pm {np.linalg.norm(std_fwhm)/np.sqrt
 print(f"Contraste de ({np.mean(mean_cnr)} pm {np.linalg.norm(std_cnr)/np.sqrt(7)}) cm sur l'ensemble de la plate")
 
 print(mean_fwhm)
+
+
+i0, j0 = 20, 20
+matrix = corr_tensor[5]
+correlation = matrix[i0, j0, :, :]  # forme (N, M)
+fwhm = fwhm_map_2d(matrix, Nc, Mc)
+cnr = cnr_map_2d(matrix, Nc, Mc)
+
+fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(11, 5), sharey=True)
+
+# --- Corrélation ---
+im1 = ax1.imshow(correlation, cmap='coolwarm', vmin=-1, vmax=1)
+ax1.set_xlabel("x")
+ax1.set_ylabel("y")
+ax1.set_title(f'Corrélation pour le point (i={i0}, j={j0})')
+cbar1 = fig.colorbar(im1, ax=ax1, fraction=0.046, pad=0.04)
+cbar1.set_label('Corrélation')
+
+# --- Résolution (FWHM) ---
+im2 = ax2.imshow(fwhm, cmap='Spectral')
+ax2.set_xlabel("x")
+ax2.set_title('Résolution')
+cbar2 = fig.colorbar(im2, ax=ax2, fraction=0.046, pad=0.04)
+cbar2.set_label('FWHM')
+
+# --- Contraste (CNR) ---
+im3 = ax3.imshow(cnr, cmap='Spectral')
+ax3.set_xlabel("x")
+ax3.set_title('Contraste')
+cbar3 = fig.colorbar(im3, ax=ax3, fraction=0.046, pad=0.04)
+cbar3.set_label('CNR')
+
+plt.tight_layout()
+plt.show()
