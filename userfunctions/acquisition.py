@@ -7,13 +7,13 @@ import numpy as np
 import sounddevice as sd
 
 # ---------- Paramètres ----------
-FS = 10000               # Fréquence d'échantillonnage [Hz]
-BLOCK = 256              # Taille des blocs audio (~6 ms)
+FS = 48000               # Fréquence d'échantillonnage [Hz] (doit correspondre à votre acquisition)
+BLOCK = 256              # Taille des blocs audio
+SEUIL = 0.25             # Seuil de déclenchement (signal normalisé entre -1 et 1)
 T_AVANT = 0.1            # Durée gardée avant le déclenchement [s]
-T_APRES = 0.4            # Durée gardée après le déclenchement [s]  (total = 500 ms)
-FACTEUR_SEUIL = 8        # Seuil = FACTEUR_SEUIL x écart-type du bruit
-DOSSIER = Path("banque_donnees")
-APERCU = True            # Afficher le signal avant de le nommer
+T_APRES = 0.4            # Durée gardée après le déclenchement [s]
+DOSSIER = Path("Piano\\Piano-app\\userfunctions\\banque_donnees")
+APERCU = False            # Afficher le signal avant de le nommer
 
 
 def creer_flux(q, fs=FS, block=BLOCK):
@@ -33,18 +33,7 @@ def vider(q):
         q.get_nowait()
 
 
-def calibrer_seuil(q, duree=1.0, facteur=FACTEUR_SEUIL, fs=FS, block=BLOCK):
-    """Mesure le bruit de fond (ne pas toucher la plaque) et en déduit un seuil."""
-    print(f"Calibration du bruit ({duree} s), ne touchez pas la plaque...")
-    vider(q)
-    blocs = [q.get() for _ in range(int(duree * fs / block))]
-    bruit = np.std(np.concatenate(blocs))
-    seuil = facteur * bruit
-    print(f"Bruit = {bruit:.2e}  ->  seuil = {seuil:.2e}")
-    return seuil
-
-
-def attendre_impact(q, seuil, t_avant=T_AVANT, t_apres=T_APRES, fs=FS, block=BLOCK):
+def attendre_impact(q, seuil=SEUIL, t_avant=T_AVANT, t_apres=T_APRES, fs=FS, block=BLOCK):
     """Attend un impact et retourne un signal de longueur fixe :
     t_avant secondes avant le déclenchement + t_apres secondes après."""
     n_avant = int(t_avant * fs)
@@ -100,11 +89,10 @@ def acquisition_banque():
     """Boucle principale : impact -> aperçu -> nom -> sauvegarde."""
     q = queue.Queue()
     with creer_flux(q):
-        seuil = calibrer_seuil(q)
         while True:
             vider(q)   # ignore ce qui s'est passé pendant qu'on nommait/regardait
             print("\nEn attente d'un impact...")
-            signal = attendre_impact(q, seuil)
+            signal = attendre_impact(q)
             print("Impact enregistré !")
 
             if APERCU:
