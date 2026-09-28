@@ -7,10 +7,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 seconds = 5 
-fs = 44100      # Sampling rate    
+fs = 5000      # Sampling rate    
 
 def record_audio(seconds, fs):
-    """Enregistre l'audio pendant un certain nombre de secondes.""" 
+    """Enregistre l'audio pendant un certain nombre de secondes.
+    seconds : période d'enregistement 
+    fs : fréquence d'acquisition
+    """ 
     
     default = True #Si cette option est utilisée, le micro/speaker par défaut est utilisé
     devices = sd.query_devices()
@@ -41,7 +44,7 @@ print("Shape of the recording: ", myrecording.shape)
 print("Data type of the recording: ", myrecording.dtype)
 print("myrecording: ", myrecording)
 
-t = np.arange(0,5,1/44100)
+t = np.arange(0,5,1/fs)
 
 plt.plot(t, myrecording)
 plt.xlabel('Temps [s]')
@@ -50,3 +53,44 @@ plt.show()
 
 np.savetxt("myrecording.csv", myrecording, delimiter=",")
 
+
+
+
+
+def plot_fft(signal, fs, fmax=None, db=False, window=True):
+    """Trace le spectre d'amplitude (FFT) d'un signal.
+    signal : tableau 1D ou (N, 1) de l'enregistrement
+    fs     : fréquence d'acquisition [Hz]
+    fmax   : fréquence max à afficher [Hz] (None = Nyquist)
+    db     : True pour afficher en dB
+    window : applique une fenêtre de Hann pour réduire la fuite spectrale
+    """
+    x = np.asarray(signal).flatten()      # (N, 1) -> (N,)
+    x = x - np.mean(x)                    # retire la composante DC
+    N = len(x)
+
+    if window:
+        w = np.hanning(N)
+        x = x * w
+        norm = np.sum(w) / 2              # correction d'amplitude de la fenêtre
+    else:
+        norm = N / 2
+
+    X = np.fft.rfft(x)                    # spectre unilatéral (signal réel)
+    freqs = np.fft.rfftfreq(N, d=1/fs)
+    mag = np.abs(X) / norm                # amplitude du sinus équivalent
+
+    if db:
+        mag = 20 * np.log10(mag + 1e-12)
+
+    plt.figure()
+    plt.plot(freqs, mag)
+    plt.xlabel('Fréquence [Hz]')
+    plt.ylabel('Amplitude [dB]' if db else 'Amplitude')
+    plt.title('FFT du signal')
+    plt.xlim(0, fmax if fmax else fs / 2)
+    plt.grid(True, alpha=0.3)
+    plt.show()
+
+
+plot_fft(myrecording, fs, db = True)
