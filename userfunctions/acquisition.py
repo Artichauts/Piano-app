@@ -13,7 +13,7 @@ SEUIL = 0.25             # Seuil de déclenchement (signal normalisé entre -1 e
 T_AVANT = 0.1            # Durée gardée avant le déclenchement [s]
 T_APRES = 0.4            # Durée gardée après le déclenchement [s]
 DOSSIER = Path("Piano\\Piano-app\\userfunctions\\banque_donnees")
-APERCU = False            # Afficher le signal avant de le nommer
+APERCU = True            # Afficher le signal avant de le nommer
 
 
 def creer_flux(q, fs=FS, block=BLOCK):
