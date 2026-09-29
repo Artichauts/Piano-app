@@ -8,20 +8,18 @@ import time
 from pathlib import Path
 from PyQt6.QtMultimedia import QSoundEffect
 from PyQt6.QtCore import QThread, pyqtSignal, QObject, QUrl
-from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
+                              QHBoxLayout, QPushButton, QButtonGroup, QLabel)
 
 from userfunctions.analyse_sig import charger_banque, analyser_signal, construire_table_notes
 
 # ---------- Paramètres ----------
-T = 0.1                 # durée d'un bloc de capture (granularité du sondage du micro)
-FS = 48000              # DOIT être la même fréquence d'échantillonnage que celle utilisée
-                        # pour enregistrer la banque de référence — sinon les fenêtres ne
-                        # représentent pas la même durée réelle et la corrélation n'a plus de sens
-THRESHOLD = 0.05        # seuil de déclenchement en temps réel (peut différer du seuil
-                        # utilisé à l'enregistrement de la banque, c'est juste un déclencheur)
+T = 0.1
+FS = 48000
+THRESHOLD = 0.05
 
-T_AVANT, T_APRES = 0.1, 0.4     # DOIT correspondre à la fenêtre utilisée pour construire la banque
-REFRACTAIRE = 0.15              # secondes ignorées après un impact, pour ne pas redéclencher sur la résonance
+T_AVANT, T_APRES = 0.1, 0.4
+REFRACTAIRE = 0.15
 
 plage = {
     "do": [(1, 38)],
@@ -39,21 +37,26 @@ plage = {
 }
 table_notes = construire_table_notes(plage)
 
+# ---------- Conversion note française -> nom de fichier anglais ----------
+LETTRE = {
+    "do": "c", "do#": "c-", "ré": "d", "ré#": "d-",
+    "mi": "e", "fa": "f", "fa#": "f-",
+    "sol": "g", "sol#": "g-", "la": "a", "la#": "a-", "si": "b",
+}
+OCTAVES = {"Grave": 3, "Moyen": 4, "Aigu": 5}
+
 # ---------- Chargement de la banque (une seule fois, au démarrage) ----------
 BANQUE_DIR = Path(__file__).parent / "userfunctions" / "banque_donnees"
 matrice_centree, normes, numeros, positions = charger_banque(BANQUE_DIR)
 
 NOTES_DIR = Path(__file__).parent / "Wav-Notes"
-NOTE_FILES = {f.stem: f for f in NOTES_DIR.glob("*.wav")}   # {"do": Path(...), "do#": Path(...), ...}
+NOTE_FILES = {f.stem: f for f in NOTES_DIR.glob("*.wav")}   # {"c3": Path, "c-3": Path, ...}
 COOLDOWN = 1.0
 
 
 # ---------- Détection de l'impact dans le flux (précision à l'échantillon près) ----------
 
 class DetecteurImpact:
-    """Accumule les blocs audio et extrait une fenêtre alignée sur le déclenchement,
-    exactement comme la fonction utilisée pour construire la banque hors-ligne."""
-
     def __init__(self, seuil, t_avant, t_apres, fs, refractaire=REFRACTAIRE):
         self.seuil = seuil
         self.n_avant = int(t_avant * fs)
@@ -76,7 +79,7 @@ class DetecteurImpact:
             depasse = np.where(np.abs(self.tampon) > self.seuil)[0]
             if depasse.size == 0:
                 if len(self.tampon) > self.n_avant:
-                    self.tampon = self.tampon[-self.n_avant:]   # garde juste ce qu'il faut pour l'avant
+                    self.tampon = self.tampon[-self.n_avant:]
                 return None
             self.i_trig = depasse[0]
 
@@ -92,7 +95,7 @@ class DetecteurImpact:
 
 
 class SDRWorker(QObject):
-    result_ready = pyqtSignal(object, object, object)   # bloc brut, carte_corr, note
+    result_ready = pyqtSignal(object, object, object)
 
     def __init__(self, T=T, fs=FS):
         super().__init__()
@@ -124,6 +127,7 @@ class SDRWorker(QObject):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.octave = OCTAVES["Moyen"]   # 4 par défaut
 
         # ---- Signal plot ----
         self.plot = pg.PlotWidget()
@@ -144,8 +148,10 @@ class MainWindow(QMainWindow):
         self.corr_plot.addItem(self.corr_img)
         self.corr_plot.setAspectLocked(False)
 
+        # ---- Layout ----
         central = QWidget()
         layout = QVBoxLayout(central)
+        layout.addWidget(self._creer_selecteur_octave())
         layout.addWidget(self.plot, stretch=1)
         layout.addWidget(self.corr_plot, stretch=2)
         self.setCentralWidget(central)
@@ -165,21 +171,46 @@ class MainWindow(QMainWindow):
         self.sdr_thread.started.connect(self.worker.run)
         self.sdr_thread.start()
 
+    def _creer_selecteur_octave(self):
+        """Petit sélecteur grave/moyen/aigu, aligné à droite."""
+        conteneur = QWidget()
+        ligne = QHBoxLayout(conteneur)
+        ligne.setContentsMargins(0, 0, 0, 0)
+        ligne.addStretch()
+        ligne.addWidget(QLabel("Octave :"))
+
+        self.groupe_octave = QButtonGroup(self)
+        self.groupe_octave.setExclusive(True)
+        for nom, octave in OCTAVES.items():
+            bouton = QPushButton(nom)
+            bouton.setCheckable(True)
+            bouton.clicked.connect(lambda _, o=octave: setattr(self, "octave", o))
+            ligne.addWidget(bouton)
+            self.groupe_octave.addButton(bouton)
+            if octave == self.octave:
+                bouton.setChecked(True)
+
+        return conteneur
+
     def jouer_note(self, note):
         if note is None or time.monotonic() - self.last_play < COOLDOWN:
             return None
-        fichier = NOTE_FILES.get(note)
+        lettre = LETTRE.get(note)
+        if lettre is None:
+            print(f"Note inconnue : {note}")
+            return None
+        stem = f"{lettre}{self.octave}"
+        fichier = NOTE_FILES.get(stem)
         if fichier is None:
-            print(f"Aucun fichier son pour la note : {note}")
+            print(f"Aucun fichier son pour : {stem}")
             return None
         self.sound.setSource(QUrl.fromLocalFile(str(fichier.resolve())))
         self.sound.play()
         self.last_play = time.monotonic()
-        return note
+        return stem
 
     def on_result(self, bloc, carte_corr, note):
         data = bloc[:, 0] if bloc.ndim > 1 else bloc
-        print("crête :", np.max(np.abs(data)), "RMS :", np.sqrt(np.mean(data**2)))
         t = np.arange(len(data)) / FS
         self.curve.setData(t, data)
 
