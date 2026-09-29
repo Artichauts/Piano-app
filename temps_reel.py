@@ -13,6 +13,8 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
 
 from userfunctions.analyse_sig import charger_banque, analyser_signal, construire_table_notes
 
+pg.setConfigOptions(imageAxisOrder='row-major')
+
 # ---------- Paramètres ----------
 T = 0.1
 FS = 48000
@@ -145,8 +147,15 @@ class MainWindow(QMainWindow):
         # ---- Correlation map plot ----
         self.corr_plot = pg.PlotWidget(title="Carte de corrélation")
         self.corr_img = pg.ImageItem()
+
+        cmap = pg.colormap.get('viridis')
+        self.corr_img.setColorMap(cmap)
+
+        self.colorbar = pg.ColorBarItem(colorMap=cmap, label="Coefficient de corrélation")
+        self.colorbar.setImageItem(self.corr_img, insert_in=self.corr_plot.getPlotItem())
+
         self.corr_plot.addItem(self.corr_img)
-        self.corr_plot.setAspectLocked(False)
+        self.corr_plot.setAspectLocked(True)
 
         # ---- Layout ----
         central = QWidget()
