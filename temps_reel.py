@@ -16,11 +16,11 @@ from userfunctions.analyse_sig import charger_banque, analyser_signal, construir
 pg.setConfigOptions(imageAxisOrder='row-major')
 
 # ---------- Paramètres ----------
-T = 0.1
+T = 0.01
 FS = 48000
 THRESHOLD = 0.05
 
-T_AVANT, T_APRES = 0.1, 0.4
+T_AVANT, T_APRES = 0.01, 0.02
 REFRACTAIRE = 0.15
 
 plage = {

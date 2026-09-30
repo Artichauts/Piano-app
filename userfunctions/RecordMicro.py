@@ -96,4 +96,4 @@ if __name__ == "__main__":
     plt.show()
 
     np.savetxt("myrecording.csv", myrecording, delimiter=",")
-    #plot_fft(myrecording, fs)
+    plot_fft(myrecording, fs)

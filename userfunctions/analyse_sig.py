@@ -39,10 +39,36 @@ def construire_table_notes(plages):
 
 
 def charger_banque(dossier):
-    """Charge la banque, triée par numéro de case (pas alphabétiquement)."""
-    fichiers = sorted(Path(dossier).glob("*.npy"), key=lambda f: int(f.stem))
-    numeros = [int(f.stem) for f in fichiers]        # 1, 2, 3, ... 297
-    signaux = [np.load(f) for f in fichiers]
+    """Charge les points triés; les répliques complètes sont moyennées."""
+    groupes = {}
+    for fichier in Path(dossier).glob("*.npy"):
+        morceaux = fichier.stem.split(".")
+        if len(morceaux) == 1 and morceaux[0].isdigit():
+            numero, replique = int(morceaux[0]), 0
+        elif (len(morceaux) == 2 and all(part.isdigit() for part in morceaux)
+              and 1 <= int(morceaux[1]) <= 3):
+            numero, replique = int(morceaux[0]), int(morceaux[1])
+        else:
+            continue
+        if 1 <= numero <= N_LIGNES * N_COLONNES:
+            groupes.setdefault(numero, {})[replique] = fichier
+
+    numeros = []
+    signaux = []
+    for numero, fichiers in sorted(groupes.items()):
+        if all(replique in fichiers for replique in (1, 2, 3)):
+            repliques = [np.load(fichiers[replique]) for replique in (1, 2, 3)]
+            longueur = min(len(signal) for signal in repliques)
+            signal = np.mean([rep[:longueur] for rep in repliques], axis=0)
+        elif 0 in fichiers:
+            signal = np.load(fichiers[0])
+        else:
+            continue
+        numeros.append(numero)
+        signaux.append(signal)
+
+    if not signaux:
+        raise ValueError("Aucun point complet trouvé dans la banque de données.")
 
     n = min(len(s) for s in signaux)
     matrice = np.stack([s[:n] for s in signaux])
