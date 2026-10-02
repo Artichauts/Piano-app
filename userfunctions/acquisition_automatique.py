@@ -100,7 +100,7 @@ def acquisition_banque():
                 if (DOSSIER / f"{nom}.npy").exists():
                     print(f"Déjà présent, conservé : {nom}.npy")
                     continue
-                time.sleep(0.1)
+                time.sleep(0.4)
                 print("attendre avant acquisition...")
                 vider(q)
                 print(f"Point {point}/{N_POINTS}, réplique {replique}/{N_REPLIQUES} : en attente d'un impact...")

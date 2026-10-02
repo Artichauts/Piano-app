@@ -11,17 +11,24 @@ from PyQt6.QtCore import QThread, pyqtSignal, QObject, QUrl
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                               QHBoxLayout, QPushButton, QButtonGroup, QLabel)
 
-from userfunctions.analyse_sig import charger_banque, analyser_signal, construire_table_notes
+from userfunctions.analyse_sig import (
+    charger_banque,
+    analyser_signal,
+    aligner_signal_sur_pic,
+    construire_table_notes,
+)
 
 pg.setConfigOptions(imageAxisOrder='row-major')
 
 # ---------- Paramètres ----------
-T = 0.01
+T = 0.1
 FS = 48000
-THRESHOLD = 0.05
+THRESHOLD = 0.06
 
-T_AVANT, T_APRES = 0.01, 0.02
+T_AVANT, T_APRES = 0.1, 0.4
 REFRACTAIRE = 0.15
+CORR_DEBUT = 0
+CORR_FIN = int(T_APRES * FS)
 
 plage = {
     "do": [(1, 38)],
@@ -49,7 +56,10 @@ OCTAVES = {"Grave": 3, "Moyen": 4, "Aigu": 5}
 
 # ---------- Chargement de la banque (une seule fois, au démarrage) ----------
 BANQUE_DIR = Path(__file__).parent / "userfunctions" / "banque_donnees"
-matrice_centree, normes, numeros, positions = charger_banque(BANQUE_DIR)
+matrice_centree, normes, numeros, positions, indice_pic_cible = charger_banque(BANQUE_DIR)
+matrice_centree = matrice_centree[:, :, CORR_DEBUT:CORR_FIN]
+matrice_centree -= matrice_centree.mean(axis=2, keepdims=True)
+normes = np.linalg.norm(matrice_centree, axis=2)
 
 NOTES_DIR = Path(__file__).parent / "Wav-Notes"
 NOTE_FILES = {f.stem: f for f in NOTES_DIR.glob("*.wav")}   # {"c3": Path, "c-3": Path, ...}
@@ -117,6 +127,8 @@ class SDRWorker(QObject):
 
                 carte_corr, note = None, None
                 if fenetre is not None:
+                    fenetre = aligner_signal_sur_pic(fenetre, indice_pic_cible)
+                    fenetre = fenetre[CORR_DEBUT:CORR_FIN]
                     note, carte_corr, _ = analyser_signal(
                         fenetre, matrice_centree, normes, numeros, positions, table_notes)
 
