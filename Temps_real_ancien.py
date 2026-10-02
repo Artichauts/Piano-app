@@ -7,7 +7,8 @@ import time
 
 from pathlib import Path
 from PyQt6.QtMultimedia import QSoundEffect
-from PyQt6.QtCore import QThread, pyqtSignal, QObject, QUrl
+from PyQt6.QtCore import QThread, pyqtSignal, QObject, QUrl, QRectF, Qt
+from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QPen
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                               QHBoxLayout, QPushButton, QButtonGroup, QLabel)
 
@@ -26,7 +27,7 @@ pg.setConfigOptions(imageAxisOrder='row-major')
 # ---------- Paramètres ----------
 T = 0.1
 FS = 48000
-THRESHOLD = 0.03
+THRESHOLD = 0.01
 
 T_AVANT, T_APRES = 0, 0.05
 REFRACTAIRE = 0.15
@@ -69,6 +70,80 @@ normes = np.linalg.norm(matrice_centree, axis=2)
 NOTES_DIR = Path(__file__).parent / "Wav-Notes"
 NOTE_FILES = {f.stem: f for f in NOTES_DIR.glob("*.wav")}   # {"c3": Path, "c-3": Path, ...}
 COOLDOWN = 1.0
+
+
+class PianoKeyboard(QWidget):
+    WHITE_KEYS = ("do", "ré", "mi", "fa", "sol", "la", "si")
+    BLACK_KEYS = {1: "do#", 2: "ré#", 4: "fa#", 5: "sol#", 6: "la#"}
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.note = None
+        self.octave = OCTAVES["Moyen"]
+        self.setMinimumHeight(112)
+        self.setMaximumHeight(142)
+
+    def set_note(self, note, octave):
+        self.note = note
+        self.octave = octave
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        margin = 12.0
+        top = 9.0
+        key_height = self.height() - top - 12.0
+        white_width = (self.width() - 2 * margin) / 21
+        black_width = white_width * 0.62
+        selected_color = QColor("#16a394")
+
+        for index in range(21):
+            octave = 3 + index // 7
+            note = self.WHITE_KEYS[index % 7]
+            x = margin + index * white_width
+            rect = QRectF(x + 0.7, top, white_width - 1.4, key_height)
+            gradient = QLinearGradient(rect.topLeft(), rect.bottomLeft())
+            if note == self.note and octave == self.octave:
+                gradient.setColorAt(0, selected_color.lighter(145))
+                gradient.setColorAt(1, selected_color)
+            else:
+                gradient.setColorAt(0, QColor("#ffffff"))
+                gradient.setColorAt(1, QColor("#e4e9ec"))
+            painter.setBrush(gradient)
+            painter.setPen(QPen(QColor("#52616a"), 1.0))
+            painter.drawRoundedRect(rect, 2.5, 2.5)
+
+            if index % 7 == 0:
+                painter.setPen(QColor("#65747c"))
+                painter.drawText(
+                    QRectF(x + 2, top + key_height - 19, white_width - 4, 15),
+                    int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter),
+                    f"C{octave}",
+                )
+
+        black_height = key_height * 0.62
+        for octave_index in range(3):
+            for white_index, note in self.BLACK_KEYS.items():
+                boundary = octave_index * 7 + white_index
+                x = margin + boundary * white_width - black_width / 2
+                rect = QRectF(x, top, black_width, black_height)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(QColor(0, 0, 0, 45))
+                painter.drawRoundedRect(rect.translated(1.5, 2), 3, 3)
+
+                gradient = QLinearGradient(rect.topLeft(), rect.bottomLeft())
+                if note == self.note and octave_index + 3 == self.octave:
+                    gradient.setColorAt(0, selected_color.lighter(135))
+                    gradient.setColorAt(1, selected_color.darker(115))
+                else:
+                    gradient.setColorAt(0, QColor("#46515a"))
+                    gradient.setColorAt(0.2, QColor("#171d22"))
+                    gradient.setColorAt(1, QColor("#050708"))
+                painter.setBrush(gradient)
+                painter.setPen(QPen(QColor("#11171b"), 0.8))
+                painter.drawRoundedRect(rect, 3, 3)
 
 
 # ---------- Détection de l'impact dans le flux (précision à l'échantillon près) ----------
@@ -193,6 +268,8 @@ class MainWindow(QMainWindow):
         self.corr_plot.setLabel("bottom", "Colonne")
         self.corr_plot.setLabel("left", "Ligne")
         self.corr_plot.invertY(True)
+        self.piano = PianoKeyboard()
+        self.note_detectee = None
 
         # ---- Layout ----
         central = QWidget()
@@ -200,6 +277,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._creer_selecteur_octave())
         layout.addWidget(self.plot, stretch=1)
         layout.addWidget(self.corr_plot, stretch=2)
+        layout.addWidget(self.piano)
         self.setCentralWidget(central)
 
         # ---- Sound ----
@@ -235,13 +313,17 @@ class MainWindow(QMainWindow):
         for nom, octave in OCTAVES.items():
             bouton = QPushButton(nom)
             bouton.setCheckable(True)
-            bouton.clicked.connect(lambda _, o=octave: setattr(self, "octave", o))
+            bouton.clicked.connect(lambda _, o=octave: self._changer_octave(o))
             ligne.addWidget(bouton)
             self.groupe_octave.addButton(bouton)
             if octave == self.octave:
                 bouton.setChecked(True)
 
         return conteneur
+
+    def _changer_octave(self, octave):
+        self.octave = octave
+        self.piano.set_note(self.note_detectee, self.octave)
 
     def jouer_note(self, note, temps_impact=None):
         if note is None or time.monotonic() - self.last_play < COOLDOWN:
@@ -278,6 +360,8 @@ class MainWindow(QMainWindow):
         self.curve.setData(t, data)
 
         if carte_corr is not None:
+            self.note_detectee = note
+            self.piano.set_note(note, self.octave)
             self.corr_img.setImage(np.asarray(carte_corr), autoLevels=True)
             joue = self.jouer_note(note, temps_impact)
             titre = f"Carte de corrélation, note : {note}"
