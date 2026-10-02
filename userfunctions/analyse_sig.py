@@ -5,27 +5,42 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-N_LIGNES = 11
-N_COLONNES = 27  # 297 / 11
+N_LIGNES = 5
+N_COLONNES = 14
 
 plage = {
-    "do": [(1, 38)],
-    "do#": [(39, 44), (50, 55), (61, 66)],
-    "ré": [(45, 49), (56, 60), (67, 77), (78, 82)],
-    "ré#": [(83, 88), (94, 99)],
-    "mi": [(89, 93), (100, 132)],
-    "fa": [(133, 159)],
-    "fa#": [(160, 165), (171, 176), (182, 187)],
-    "sol": [(166, 170), (177, 181), (188, 203)],
-    "sol#": [(204, 209), (215, 220), (226, 231)],
-    "la": [(210, 214), (221, 225), (232, 247)],
-    "la#": [(248, 253), (259, 264), (270, 275)],
-    "si": [(254, 258), (265, 269), (276, 297)],
-    }
+    "do": [(1, 8)],
+    "do#": [(9, 10), (14, 15)],
+    "ré": [(11, 13), (16, 18)],
+    "ré#": [(19, 20), (24, 25)],
+    "mi": [(21, 23), (26, 30)],
+    "fa": [(31, 38)],
+    "fa#": [(39, 40), (44, 45)],
+    "sol": [(41, 43), (46, 48)],
+    "sol#": [(49, 50), (54, 55)],
+    "la": [(51, 53), (56, 58)],
+    "la#": [(59, 60), (64, 65)],
+    "si": [(61, 63), (66, 70)],
+}
+
+# plage = {
+#     "do": [(1, 38)],
+#     "do#": [(39, 44), (50, 55), (61, 66)],
+#     "ré": [(45, 49), (56, 60), (67, 77), (78, 82)],
+#     "ré#": [(83, 88), (94, 99)],
+#     "mi": [(89, 93), (100, 132)],
+#     "fa": [(133, 159)],
+#     "fa#": [(160, 165), (171, 176), (182, 187)],
+#     "sol": [(166, 170), (177, 181), (188, 203)],
+#     "sol#": [(204, 209), (215, 220), (226, 231)],
+#     "la": [(210, 214), (221, 225), (232, 247)],
+#     "la#": [(248, 253), (259, 264), (270, 275)],
+#     "si": [(254, 258), (265, 269), (276, 297)],
+#     }
 
 def case_vers_position(k):
-    """Numéro de case (1 à 297) -> (ligne, colonne), 0-indexé, ligne 0 = en bas."""
-    return (k - 1) % N_LIGNES, (k - 1) // N_LIGNES
+    """Case 1-70 vers (ligne, colonne), avec la ligne 0 en haut."""
+    return N_LIGNES - 1 - (k - 1) % N_LIGNES, (k - 1) // N_LIGNES
 
 
 def construire_table_notes(plages):
@@ -200,7 +215,7 @@ def corr_function(signal, matrice_centree, debut=0, fin=None):
         corr = correlations[i_replique]
 
         print(corr.shape)
-        carte_corr = corr.reshape(11, 27, order='F')
+        carte_corr = corr.reshape(N_LIGNES, N_COLONNES, order='F')[::-1]
         #carte_corr = np.full((N_LIGNES, N_COLONNES), np.nan)
     
         return carte_corr, corr
@@ -247,7 +262,8 @@ if __name__ == "__main__":
     DOSSIER = Path("Piano\\Piano-app\\userfunctions\\banque_donnees")
     matrice_centree, normes, numeros, positions, indice_pic_cible = charger_banque(DOSSIER)
     debut, fin = 0, 24000
-    indices_points = (100, 101, 32)
+    numeros_cases = (1, 5, 70)
+    indices_points = tuple(numero - 1 for numero in numeros_cases)
     extraits = [matrice_centree[0, i, debut:fin] for i in indices_points]
     indices_pics = [premier_pic(signal) for signal in extraits]
     indice_cible = max(indices_pics)

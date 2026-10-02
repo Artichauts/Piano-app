@@ -23,7 +23,7 @@ pg.setConfigOptions(imageAxisOrder='row-major')
 # ---------- Paramètres ----------
 T = 0.1
 FS = 48000
-THRESHOLD = 0.06
+THRESHOLD = 0.05
 
 T_AVANT, T_APRES = 0, 0.05
 REFRACTAIRE = 0.15
@@ -31,18 +31,18 @@ CORR_DEBUT = 0
 CORR_FIN = int(T_APRES * FS)
 
 plage = {
-    "do": [(1, 38)],
-    "do#": [(39, 44), (50, 55), (61, 66)],
-    "ré": [(45, 49), (56, 60), (67, 77), (78, 82)],
-    "ré#": [(83, 88), (94, 99)],
-    "mi": [(89, 93), (100, 132)],
-    "fa": [(133, 159)],
-    "fa#": [(160, 165), (171, 176), (182, 187)],
-    "sol": [(166, 170), (177, 181), (188, 203)],
-    "sol#": [(204, 209), (215, 220), (226, 231)],
-    "la": [(210, 214), (221, 225), (232, 247)],
-    "la#": [(248, 253), (259, 264), (270, 275)],
-    "si": [(254, 258), (265, 269), (276, 297)],
+    "do": [(1, 8)],
+    "do#": [(9, 10), (14, 15)],
+    "ré": [(11, 13), (16, 18)],
+    "ré#": [(19, 20), (24, 25)],
+    "mi": [(21, 23), (26, 30)],
+    "fa": [(31, 38)],
+    "fa#": [(39, 40), (44, 45)],
+    "sol": [(41, 43), (46, 48)],
+    "sol#": [(49, 50), (54, 55)],
+    "la": [(51, 53), (56, 58)],
+    "la#": [(59, 60), (64, 65)],
+    "si": [(61, 63), (66, 70)],
 }
 table_notes = construire_table_notes(plage)
 
@@ -178,6 +178,9 @@ class MainWindow(QMainWindow):
 
         self.corr_plot.addItem(self.corr_img)
         self.corr_plot.setAspectLocked(True)
+        self.corr_plot.setLabel("bottom", "Colonne")
+        self.corr_plot.setLabel("left", "Ligne")
+        self.corr_plot.invertY(True)
 
         # ---- Layout ----
         central = QWidget()
