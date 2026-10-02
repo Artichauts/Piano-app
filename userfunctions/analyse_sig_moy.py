@@ -161,7 +161,7 @@ def preparer_matrice(matrice, seuil, n_avant, n_apres):
 
 def analyser_signal(signal, matrice_centree, normes, numeros, positions, table_notes,
                     indice_pic_cible=None):
-    """Retourne le point maximal et la carte de sa réplique gagnante."""
+    """Retourne la note au coefficient moyen maximal et la carte moyennée."""
     signal = np.asarray(signal, dtype=float)
     if signal.ndim > 1:
         signal = signal[:, 0]
@@ -180,15 +180,25 @@ def analyser_signal(signal, matrice_centree, normes, numeros, positions, table_n
 
     s = signal - signal.mean()
     corr = (np.abs(matrice_centree) @ np.abs(s)) / (normes * np.linalg.norm(s) + 1e-12)
-    i_replique, i_best = np.unravel_index(np.argmax(corr), corr.shape)
-    corr_replique = corr[i_replique]
+    corr_cases = corr.mean(axis=0)
+
+    indices_par_note = {}
+    for i_case, numero in enumerate(numeros):
+        note_case = table_notes.get(numero)
+        if note_case is not None:
+            indices_par_note.setdefault(note_case, []).append(i_case)
+    moyennes_notes = {
+        note: corr_cases[indices].mean()
+        for note, indices in indices_par_note.items()
+    }
+    if not moyennes_notes:
+        raise ValueError("Aucune case de la matrice n'est associée à une note.")
+    note = max(moyennes_notes, key=moyennes_notes.get)
 
     carte_corr = np.full((N_LIGNES, N_COLONNES), np.nan)
-    carte_corr[positions[:, 0], positions[:, 1]] = corr_replique
+    carte_corr[positions[:, 0], positions[:, 1]] = corr_cases
 
-    note = table_notes.get(numeros[i_best])
-
-    return note, carte_corr, corr_replique
+    return note, carte_corr, corr_cases
 
 def corr_function(signal, matrice_centree, debut=0, fin=None):
         signal = np.asarray(signal, dtype=float)

@@ -9,7 +9,7 @@ import sounddevice as sd
 # ---------- Paramètres ----------
 FS = 48000               # Fréquence d'échantillonnage [Hz] (doit correspondre à votre acquisition)
 BLOCK = 256              # Taille des blocs audio
-SEUIL = 0.05             # Seuil de déclenchement (signal normalisé entre -1 et 1)
+SEUIL = 0.03             # Seuil de déclenchement (signal normalisé entre -1 et 1)
 T_AVANT = 0.0            # Durée gardée avant le déclenchement [s]
 T_APRES = 0.100            # Durée gardée après le déclenchement [s]
 DOSSIER = Path("Piano\\Piano-app\\userfunctions\\banque_donnees")
