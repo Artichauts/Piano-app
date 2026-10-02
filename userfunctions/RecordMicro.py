@@ -28,10 +28,8 @@ def record_audio(seconds, fs):
 
         sd.default.device = [int(DeviceIn), int(DeviceOut)]
 
-    print("Recording with : {} \n".format(devices[sd.default.device[0]]['name']))
     myrecording = sd.rec(int(seconds * fs), samplerate=fs, channels= 1)
     sd.wait()
-    print("Recording finished.")
 
     return myrecording 
 

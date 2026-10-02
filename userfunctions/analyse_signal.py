@@ -3,144 +3,115 @@ from pathlib import Path
 import time
 import numpy as np
 import matplotlib.pyplot as plt
-
-from RecordMicro import record_audio
-
-def extraire_apres_pic_max(tenseur, n_points=9000):
-    """Garde n_points à partir du pic absolu de chaque signal d'un tenseur 3D."""
-    tenseur = np.asarray(tenseur)
-    if tenseur.ndim != 3:
-        raise ValueError("Le tenseur doit avoir la forme (répliques, points, échantillons).")
-    if n_points <= 0:
-        raise ValueError("n_points doit être supérieur à zéro.")
-    if tenseur.shape[2] == 0:
-        raise ValueError("Les signaux ne peuvent pas être vides.")
-
-    indices_pics = np.argmax(tenseur, axis=2)
-    extraits = np.zeros((*tenseur.shape[:2], n_points), dtype=tenseur.dtype)
-    for i_replique, i_point in np.ndindex(tenseur.shape[:2]):
-        debut = indices_pics[i_replique, i_point]
-        fin = min(debut + n_points, tenseur.shape[2])
-        extrait = tenseur[i_replique, i_point, debut:fin]
-        extraits[i_replique, i_point, :len(extrait)] = extrait
-
-    return extraits
-
-
-def premier_pic(signal, seuil_relatif=0.06):
-    amplitude = np.abs(signal - signal[0])
-    seuil = amplitude.max() * seuil_relatif
-    pics = np.flatnonzero(
-        (amplitude[1:-1] >= amplitude[:-2])
-        & (amplitude[1:-1] > amplitude[2:])
-        & (amplitude[1:-1] >= seuil)
-    ) + 1
-    return int(pics[0]) if pics.size else int(np.argmax(amplitude))
+from scipy.signal import fftconvolve
 
 
 
-
-def aligner_signal_sur_pic(signal, indice_cible):
-    signal = np.asarray(signal, dtype=float).reshape(-1)
-    signal = signal - signal[0]
-    decalage = indice_cible - premier_pic(signal)
-    if decalage >= 0:
-        return np.pad(signal, (decalage, 0))[:len(signal)]
-    return np.pad(signal[-decalage:], (0, -decalage))
+import os
+import re
+import numpy as np
 
 
-def aligner_matrice_sur_premier_pic(matrice):
-    indices_pics = np.array([
-        [premier_pic(signal) for signal in replique]
-        for replique in matrice
-    ])
-    indice_cible = int(indices_pics.max())
-    matrice_alignee = np.empty_like(matrice)
-    for i_replique in range(matrice.shape[0]):
-        for i_point in range(matrice.shape[1]):
-            signal = matrice[i_replique, i_point] - matrice[i_replique, i_point, 0]
-            decalage = indice_cible - indices_pics[i_replique, i_point]
-            matrice_alignee[i_replique, i_point] = np.pad(
-                signal, (decalage, 0)
-            )[:matrice.shape[2]]
-    return matrice_alignee, indice_cible
+def load_database(folder="Old_banque_donnees", pad_value=0.0, verbose=True):
+    """
+    Load every .npy file in `folder` and stack them into a 2D matrix
+    of shape (n_signals, signal_length).
+
+    - Files are sorted numerically by name (1.npy, 2.npy, ..., 10.npy, ...).
+    - If signals have different lengths, shorter ones are padded
+      with `pad_value` up to the longest one.
+
+    Returns
+    -------
+    X : np.ndarray, shape (n_signals, max_length)
+    names : list[str], file names in the same row order as X
+    """
+    files = [f for f in os.listdir(folder) if f.endswith(".npy")]
+    files.sort(key=lambda f: int(re.findall(r"\d+", f)[0]))
+
+    signals = [np.load(os.path.join(folder, f)).squeeze() for f in files]
+
+    lengths = [len(s) for s in signals]
+    max_len = max(lengths)
+
+    if len(set(lengths)) > 1 and verbose:
+        print(f"Warning: signals have different lengths "
+              f"(min={min(lengths)}, max={max_len}), padding to {max_len}.")
+
+    X = np.full((len(signals), max_len), pad_value, dtype=np.float32)
+    for i, s in enumerate(signals):
+        X[i, :len(s)] = s
+
+    if verbose:
+        print(f"Loaded {X.shape[0]} signals, each of length {X.shape[1]}")
+
+    return X, files
+
+
+def crop_after_max(X, N, include_peak=False, use_abs=False, pad_value=0.0):
+    """
+    For each signal, keep the N points that follow its maximum.
+
+    Parameters
+    ----------
+    X : np.ndarray, shape (n_signals, signal_length), e.g. (297, 24000)
+    N : int, number of points to keep after the max
+    include_peak : bool
+        If True, the window starts at the max itself (the peak is the first point).
+        If False, it starts at the point right after the max.
+    use_abs : bool
+        If True, find the peak on |signal| (useful if the largest excursion is negative).
+    pad_value : float
+        Fill value if fewer than N points remain after the max.
+
+    Returns
+    -------
+    out : np.ndarray, shape (n_signals, N)
+    peaks : np.ndarray, shape (n_signals,), index of the max in each signal
+    """
+    n_signals, length = X.shape
+    if N <= 0:
+        raise ValueError("N must be positive")
+
+    peaks = np.argmax(np.abs(X) if use_abs else X, axis=1)
+    starts = peaks if include_peak else peaks + 1
+
+    out = np.full((n_signals, N), pad_value, dtype=X.dtype)
+    n_short = 0
+    for i in range(n_signals):
+        seg = X[i, starts[i]:starts[i] + N]
+        out[i, :len(seg)] = seg
+        n_short += len(seg) < N
+
+    if n_short:
+        print(f"Warning: {n_short} signal(s) had fewer than {N} points after the max "
+              f"and were padded with {pad_value}.")
+
+    return out, peaks
 
 
 
-def charger_banque(dossier, N_LIGNES = 11, N_COLONNES = 27):
-    """Charge les points triés; les répliques complètes sont moyennées."""
-    groupes = {}
-    for fichier in Path(dossier).glob("*.npy"):
-        morceaux = fichier.stem.split(".")
-        if len(morceaux) == 1 and morceaux[0].isdigit():
-            numero, replique = int(morceaux[0]), 0
-        elif (len(morceaux) == 2 and all(part.isdigit() for part in morceaux)
-              and 1 <= int(morceaux[1]) <= 3):
-            numero, replique = int(morceaux[0]), int(morceaux[1])
-        else:
-            continue
-        if 1 <= numero <= N_LIGNES * N_COLONNES:
-            groupes.setdefault(numero, {})[replique] = fichier
-
-    numeros = []
-    signaux = []
-    for numero, fichiers in sorted(groupes.items()):
-        if all(replique in fichiers for replique in (1, 2, 3)):
-            repliques = [np.load(fichiers[replique]) for replique in (1, 2, 3)]
-        elif 0 in fichiers:
-            signal = np.load(fichiers[0])
-            repliques = [signal, signal, signal]
-        else:
-            continue
-        numeros.append(numero)
-        signaux.append(repliques)
-
-    if not signaux:
-        raise ValueError("Aucun point complet trouvé dans la banque de données.")
-
-    n = min(len(signal) for repliques in signaux for signal in repliques)
-    matrice = np.stack([
-        [repliques[i][:n] for repliques in signaux]
-        for i in range(3)
-    ])
-    print(matrice.shape)
-    matrice, indice_pic_cible = aligner_matrice_sur_premier_pic(matrice)
-    matrice_centree = matrice - matrice.mean(axis=2, keepdims=True)
 
 
-    #positions = np.array([case_vers_position(k) for k in numeros])
-    return matrice_centree, indice_pic_cible
 
+def corr_function(signal, matrice_centree, shape=(11, 27)):
+    s = np.asarray(signal, dtype=float).ravel()                        # (T,)
+    M = matrice_centree.astype(float)                                           # (N, T)
+    # center both (a no-op for M if it is already centered)
+    s = s - s.mean()
+    M = M - M.mean(axis=1, keepdims=True)
 
-def corr_function(signal, matrice_centree, debut=0, fin=None):
-        signal = np.asarray(signal, dtype=float)
-        if signal.ndim > 1:
-            signal = signal[:, 0]
+    # Pearson r for every row against the signal -> (297,)
+    num = M @ s
+    den = np.linalg.norm(M, axis=1) * np.linalg.norm(s) + 1e-12
+    correlations = num / den
 
-        matrice_centree = np.asarray(matrice_centree)
-        if matrice_centree.ndim == 2:
-            matrice_centree = matrice_centree[np.newaxis, :, :]
+    i_replique = int(np.argmax(correlations))
+    corr = correlations[i_replique]                                    # best r (scalar)
 
-        if fin is None:
-            fin = matrice_centree.shape[2]
-        signal = signal[debut:fin]
-        matrice_centree = matrice_centree[:, :, debut:fin]
+    carte_corr = correlations.reshape(shape, order='F')                # (11, 27)
 
-        n = matrice_centree.shape[2]
-        if len(signal) != n:
-            signal = signal[:n] if len(signal) > n else np.pad(signal, (0, n - len(signal)))
-
-        s = signal - signal.mean()
-        norm = np.linalg.norm(matrice_centree, axis=2)
-        correlations = (matrice_centree @ s) / (norm * np.linalg.norm(s) + 1e-12)
-        i_replique = np.unravel_index(np.argmax(correlations), correlations.shape)[0]
-        corr = correlations[i_replique]
-
-        print(corr.shape)
-        carte_corr = corr.reshape(11, 27, order='F')
-        #carte_corr = np.full((N_LIGNES, N_COLONNES), np.nan)
-    
-        return carte_corr, corr
+    return carte_corr, corr
 
 
 
@@ -148,39 +119,45 @@ def corr_function(signal, matrice_centree, debut=0, fin=None):
 
 
 if __name__ == "__main__":
-    DOSSIER = Path("Piano\\Piano-app\\userfunctions\\banque_donnees")
-    tenseur_de_mesure, indice_pic_cible = charger_banque(DOSSIER)
-    print(tenseur_de_mesure.shape)
+
+    # Usage
+    matrice, names = load_database("userfunctions/Old_banque_donnees")
+    print(matrice.shape)
+    
+    # Usage
+    matrice_after, peaks = crop_after_max(matrice, 2000, include_peak=True, use_abs=False)
+    print(matrice_after.shape)  # (297, 5000)
+    #print(tenseur_de_mesure.shape)
     #tenseur_crop =  extraire_apres_pic_max(tenseur_de_mesure, n_points=9000)
-    print("Jv pret à taper")
-    time.sleep(1)
-    print("Jv tape")
+    #print("Jv pret à taper")
+    #time.sleep(1)
+    #print("Jv tape")
 
         
-    point_1 = record_audio(2, fs=48000)
-    point_2 = record_audio(2, fs=48000)
-    point_3 = record_audio(2, fs=48000)
+    #point_1 = record_audio(2, fs=48000)    
+    #point_2 = record_audio(2, fs=48000)
+    #point_3 = record_audio(2, fs=48000)
 
-    point_1_alligned = aligner_signal_sur_pic(point_1, indice_pic_cible)
-    point_2_alligned = aligner_signal_sur_pic(point_2, indice_pic_cible)
-    point_3_alligned = aligner_signal_sur_pic(point_3, indice_pic_cible)
+    #point_1_alligned = aligner_signal_sur_pic(point_1, indice_pic_cible)
+    #point_2_alligned = aligner_signal_sur_pic(point_2, indice_pic_cible)
+    #point_3_alligned = aligner_signal_sur_pic(point_3, indice_pic_cible)
 
-    print("Check")
-    plt.plot(tenseur_de_mesure[0, 224])
-    reference = tenseur_de_mesure[1, 224]
-    n_plot = min(len(reference), len(point_1_alligned))
-    plt.plot(reference[:n_plot], label="Référence")
+    #print("Check")
+    #plt.plot(tenseur_de_mesure[0, 224])
+    #reference = tenseur_de_mesure[1, 224]
+    #n_plot = min(len(reference), len(point_1_alligned))
+    #plt.plot(reference[:n_plot], label="Référence")
     
-    plt.plot(point_1_alligned[:n_plot], label="Nouvelle mesure alignée")
-    plt.plot(point_2_alligned[:n_plot], label="Nouvelle mesure alignée")
-    plt.plot(point_3_alligned[:n_plot], label="Nouvelle mesure alignée")
-
-    plt.legend()
+    #plt.plot(point_1_alligned[:n_plot], label="Nouvelle mesure alignée")
+    #plt.plot(point_2_alligned[:n_plot], label="Nouvelle mesure alignée")
+    #plt.plot(point_3_alligned[:n_plot], label="Nouvelle mesure alignée")
+    plt.plot(matrice_after[100])
+    plt.plot(matrice_after[101])
+    #plt.plot(matrice_after[32])
     plt.show()
 
-    corr1_map, corr = corr_function(point_1_alligned, tenseur_de_mesure[2,:])
-    corr2_map, corr = corr_function(point_1_alligned, tenseur_de_mesure[1,:])
-    corr3_map, corr = corr_function(point_1_alligned, tenseur_de_mesure[1,:])
+    corr1_map, corr = corr_function(matrice_after[100], matrice_after)
+
 
     plt.imshow(corr1_map, cmap='coolwarm', vmin=-1, vmax=1)
     plt.show()

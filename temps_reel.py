@@ -7,7 +7,8 @@ import time
 
 from pathlib import Path
 from PyQt6.QtMultimedia import QSoundEffect
-from PyQt6.QtCore import QThread, pyqtSignal, QObject, QUrl
+from PyQt6.QtCore import QThread, pyqtSignal, QObject, QUrl, Qt
+from PyQt6.QtGui import QColor, QPainter
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                               QHBoxLayout, QPushButton, QButtonGroup, QLabel)
 
@@ -69,6 +70,56 @@ normes = np.linalg.norm(matrice_centree, axis=2)
 NOTES_DIR = Path(__file__).parent / "Wav-Notes"
 NOTE_FILES = {f.stem: f for f in NOTES_DIR.glob("*.wav")}   # {"c3": Path, "c-3": Path, ...}
 COOLDOWN = 1.0
+
+
+class PianoKeyboard(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.white_notes = []
+        self.black_notes = []
+        for octave in range(3, 6):
+            self.white_notes.extend(f"{note}{octave}" for note in "cdefgab")
+            self.black_notes.extend(f"{note}-{octave}" for note in "cdfga")
+        self.white_notes.append("c6")
+        self.selected_note = None
+        self.setMinimumHeight(110)
+        self.setMaximumHeight(150)
+
+    def set_note(self, note):
+        self.selected_note = (
+            note.lower() if note in self.white_notes + self.black_notes else None
+        )
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        white_width = self.width() / len(self.white_notes)
+        white_height = self.height()
+        highlight = QColor(255, 190, 70)
+
+        for index, note in enumerate(self.white_notes):
+            left = index * white_width
+            painter.setBrush(highlight if note == self.selected_note else QColor("white"))
+            painter.setPen(QColor("#333333"))
+            painter.drawRect(int(left), 0, int(white_width + 1), white_height - 1)
+            if note.startswith("c"):
+                painter.drawText(
+                    int(left), white_height - 22, int(white_width), 18,
+                    Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
+                    note.upper(),
+                )
+
+        for note in self.black_notes:
+            octave = int(note[-1])
+            white_index = (octave - 3) * 7 + "cdefgab".index(note[0])
+            left = (white_index + 1) * white_width - white_width * 0.32
+            painter.setBrush(highlight if note == self.selected_note else QColor("#171717"))
+            painter.setPen(QColor("#111111"))
+            painter.drawRect(
+                int(left), 0, int(white_width * 0.64), int(white_height * 0.62)
+            )
 
 
 # ---------- Détection de l'impact dans le flux (précision à l'échantillon près) ----------
@@ -200,6 +251,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._creer_selecteur_octave())
         layout.addWidget(self.plot, stretch=1)
         layout.addWidget(self.corr_plot, stretch=2)
+        self.keyboard = PianoKeyboard()
+        layout.addWidget(self.keyboard)
         self.setCentralWidget(central)
 
         # ---- Sound ----
@@ -282,6 +335,7 @@ class MainWindow(QMainWindow):
             joue = self.jouer_note(note, temps_impact)
             titre = f"Carte de corrélation, note : {note}"
             if joue:
+                self.keyboard.set_note(joue)
                 titre += f" | jouée : {joue}"
             self.corr_plot.setTitle(titre)
 
