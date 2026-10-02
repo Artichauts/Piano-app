@@ -12,9 +12,12 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                               QHBoxLayout, QPushButton, QButtonGroup, QLabel)
 
 from userfunctions.analyse_sig import (
+    N_LIGNES,
+    N_COLONNES,
     charger_banque,
     analyser_signal,
     aligner_signal_sur_pic,
+    case_vers_position,
     construire_table_notes,
 )
 
@@ -23,27 +26,29 @@ pg.setConfigOptions(imageAxisOrder='row-major')
 # ---------- Paramètres ----------
 T = 0.1
 FS = 48000
-THRESHOLD = 0.05
+THRESHOLD = 0.03
 
 T_AVANT, T_APRES = 0, 0.05
 REFRACTAIRE = 0.15
 CORR_DEBUT = 0
 CORR_FIN = int(T_APRES * FS)
+CASES_NOIRES = (4, 5, 34, 35, 29, 30, 69, 70)
 
 plage = {
-    "do": [(1, 8)],
-    "do#": [(9, 10), (14, 15)],
+    "do": [(1, 3), (6, 8)],
+    "do#": [(4, 5), (9, 10), (14, 15)],
     "ré": [(11, 13), (16, 18)],
-    "ré#": [(19, 20), (24, 25)],
-    "mi": [(21, 23), (26, 30)],
-    "fa": [(31, 38)],
-    "fa#": [(39, 40), (44, 45)],
+    "ré#": [(19, 20), (24, 25), (29, 30)],
+    "mi": [(21, 23), (26, 28)],
+    "fa": [(31, 33), (36, 38)],
+    "fa#": [(34, 35), (39, 40), (44, 45)],
     "sol": [(41, 43), (46, 48)],
     "sol#": [(49, 50), (54, 55)],
     "la": [(51, 53), (56, 58)],
-    "la#": [(59, 60), (64, 65)],
-    "si": [(61, 63), (66, 70)],
+    "la#": [(59, 60), (64, 65), (69, 70)],
+    "si": [(61, 63), (66, 68)],
 }
+
 table_notes = construire_table_notes(plage)
 
 # ---------- Conversion note française -> nom de fichier anglais ----------
@@ -177,6 +182,13 @@ class MainWindow(QMainWindow):
         self.colorbar.setImageItem(self.corr_img, insert_in=self.corr_plot.getPlotItem())
 
         self.corr_plot.addItem(self.corr_img)
+        masque_rgba = np.zeros((N_LIGNES, N_COLONNES, 4), dtype=np.uint8)
+        for numero_case in CASES_NOIRES:
+            ligne, colonne = case_vers_position(numero_case)
+            masque_rgba[ligne, colonne] = (0, 0, 0, 255)
+        self.masque_img = pg.ImageItem()
+        self.masque_img.setImage(masque_rgba)
+        self.corr_plot.addItem(self.masque_img)
         self.corr_plot.setAspectLocked(True)
         self.corr_plot.setLabel("bottom", "Colonne")
         self.corr_plot.setLabel("left", "Ligne")
