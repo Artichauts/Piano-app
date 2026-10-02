@@ -25,7 +25,7 @@ T = 0.1
 FS = 48000
 THRESHOLD = 0.06
 
-T_AVANT, T_APRES = 0.1, 0.4
+T_AVANT, T_APRES = 0, 0.05
 REFRACTAIRE = 0.15
 CORR_DEBUT = 0
 CORR_FIN = int(T_APRES * FS)
@@ -71,12 +71,14 @@ COOLDOWN = 1.0
 class DetecteurImpact:
     def __init__(self, seuil, t_avant, t_apres, fs, refractaire=REFRACTAIRE):
         self.seuil = seuil
+        self.fs = fs
         self.n_avant = int(t_avant * fs)
         self.n_apres = int(t_apres * fs)
         self.n_refractaire = int(refractaire * fs)
         self.tampon = np.zeros(0)
         self.i_trig = None
         self.silence_restant = 0
+        self.temps_impact = None
 
     def ajouter_bloc(self, bloc):
         bloc = np.asarray(bloc).reshape(-1)
@@ -94,6 +96,9 @@ class DetecteurImpact:
                     self.tampon = self.tampon[-self.n_avant:]
                 return None
             self.i_trig = depasse[0]
+            maintenant = time.monotonic()
+            echantillons_apres_impact = len(self.tampon) - 1 - self.i_trig
+            self.temps_impact = maintenant - echantillons_apres_impact / self.fs
 
         if len(self.tampon) >= self.i_trig + self.n_apres:
             debut = max(0, self.i_trig - self.n_avant)
@@ -101,13 +106,15 @@ class DetecteurImpact:
             self.tampon = np.zeros(0)
             self.i_trig = None
             self.silence_restant = self.n_refractaire
-            return fenetre
+            temps_impact = self.temps_impact
+            self.temps_impact = None
+            return fenetre, temps_impact
 
         return None
 
 
 class SDRWorker(QObject):
-    result_ready = pyqtSignal(object, object, object)
+    result_ready = pyqtSignal(object, object, object, object)
 
     def __init__(self, T=T, fs=FS):
         super().__init__()
@@ -123,16 +130,18 @@ class SDRWorker(QObject):
                 if overflowed:
                     print("Débordement du flux audio.")
                 bloc = np.asarray(bloc)
-                fenetre = self.detecteur.ajouter_bloc(bloc)
+                capture = self.detecteur.ajouter_bloc(bloc)
 
                 carte_corr, note = None, None
-                if fenetre is not None:
+                temps_impact = None
+                if capture is not None:
+                    fenetre, temps_impact = capture
                     fenetre = aligner_signal_sur_pic(fenetre, indice_pic_cible)
                     fenetre = fenetre[CORR_DEBUT:CORR_FIN]
                     note, carte_corr, _ = analyser_signal(
                         fenetre, matrice_centree, normes, numeros, positions, table_notes)
 
-                self.result_ready.emit(bloc, carte_corr, note)
+                self.result_ready.emit(bloc, carte_corr, note, temps_impact)
 
     def stop(self):
         self.running = False
@@ -141,6 +150,7 @@ class SDRWorker(QObject):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        self._closing = False
         self.octave = OCTAVES["Moyen"]   # 4 par défaut
 
         # ---- Signal plot ----
@@ -180,6 +190,8 @@ class MainWindow(QMainWindow):
         # ---- Sound ----
         self.sound = QSoundEffect()
         self.sound.setVolume(1.0)
+        self.sound.playingChanged.connect(self._mesurer_latence_audio)
+        self.temps_impact_en_attente = None
         self.last_play = 0.0
 
         # ---- Worker thread ----
@@ -197,6 +209,9 @@ class MainWindow(QMainWindow):
         conteneur = QWidget()
         ligne = QHBoxLayout(conteneur)
         ligne.setContentsMargins(0, 0, 0, 0)
+        self.latence_label = QLabel("Délai : -- ms")
+        self.latence_label.setMinimumWidth(125)
+        ligne.addWidget(self.latence_label)
         ligne.addStretch()
         ligne.addWidget(QLabel("Octave :"))
 
@@ -213,7 +228,7 @@ class MainWindow(QMainWindow):
 
         return conteneur
 
-    def jouer_note(self, note):
+    def jouer_note(self, note, temps_impact=None):
         if note is None or time.monotonic() - self.last_play < COOLDOWN:
             return None
         lettre = LETTRE.get(note)
@@ -226,24 +241,41 @@ class MainWindow(QMainWindow):
             print(f"Aucun fichier son pour : {stem}")
             return None
         self.sound.setSource(QUrl.fromLocalFile(str(fichier.resolve())))
+        self.temps_impact_en_attente = temps_impact
         self.sound.play()
         self.last_play = time.monotonic()
         return stem
 
-    def on_result(self, bloc, carte_corr, note):
+    def _mesurer_latence_audio(self):
+        if self._closing:
+            return
+        if self.sound.isPlaying() and self.temps_impact_en_attente is not None:
+            latence_ms = (time.monotonic() - self.temps_impact_en_attente) * 1000
+            self.latence_label.setText(f"Délai : {latence_ms:.1f} ms")
+            print(f"Latence appui -> démarrage du son : {latence_ms:.1f} ms")
+            self.temps_impact_en_attente = None
+
+    def on_result(self, bloc, carte_corr, note, temps_impact):
+        if self._closing:
+            return
         data = bloc[:, 0] if bloc.ndim > 1 else bloc
         t = np.arange(len(data)) / FS
         self.curve.setData(t, data)
 
         if carte_corr is not None:
             self.corr_img.setImage(np.asarray(carte_corr), autoLevels=True)
-            joue = self.jouer_note(note)
+            joue = self.jouer_note(note, temps_impact)
             titre = f"Carte de corrélation, note : {note}"
             if joue:
                 titre += f" | jouée : {joue}"
             self.corr_plot.setTitle(titre)
 
     def closeEvent(self, event):
+        self._closing = True
+        self.worker.result_ready.disconnect(self.on_result)
+        self.sound.playingChanged.disconnect(self._mesurer_latence_audio)
+        self.sound.stop()
+        self.temps_impact_en_attente = None
         self.worker.stop()
         self.sdr_thread.quit()
         self.sdr_thread.wait()
