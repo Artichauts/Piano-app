@@ -61,7 +61,7 @@ LETTRE = {
 OCTAVES = {"Grave": 3, "Moyen": 4, "Aigu": 5}
 
 # ---------- Chargement de la banque (une seule fois, au démarrage) ----------
-BANQUE_DIR = Path(__file__).parent / "userfunctions" / "banque_donnees"
+BANQUE_DIR = Path(__file__).parent / "userfunctions" / "Old_banque_donnees"
 matrice_centree, normes, numeros, positions, indice_pic_cible = charger_banque(BANQUE_DIR)
 matrice_centree = matrice_centree[:, :, CORR_DEBUT:CORR_FIN]
 matrice_centree -= matrice_centree.mean(axis=2, keepdims=True)
