@@ -27,7 +27,7 @@ pg.setConfigOptions(imageAxisOrder='row-major')
 # ---------- Paramètres ----------
 T = 0.1
 FS = 48000
-THRESHOLD = 0.01
+THRESHOLD = 0.03
 
 T_AVANT, T_APRES = 0, 0.05
 REFRACTAIRE = 0.15
@@ -73,6 +73,10 @@ COOLDOWN = 1.0
 
 
 class PianoKeyboard(QWidget):
+    """
+    Widget représentant un clavier de piano (3 octaves, de C3 à B5).
+    La classe gère l'affichage des touches et la mise en évidence de la note détectée.
+    """
     WHITE_KEYS = ("do", "ré", "mi", "fa", "sol", "la", "si")
     BLACK_KEYS = {1: "do#", 2: "ré#", 4: "fa#", 5: "sol#", 6: "la#"}
 
@@ -149,6 +153,11 @@ class PianoKeyboard(QWidget):
 # ---------- Détection de l'impact dans le flux (précision à l'échantillon près) ----------
 
 class DetecteurImpact:
+    """
+    La classe DetecteurImpact détecte un impact dans un flux audio en temps réel.
+    Elle utilise un seuil pour déclencher la détection et retourne une fenêtre de signal.
+    La fenêtre contient n_avant échantillons avant le déclenchement et n_apres échantillons après.
+    """
     def __init__(self, seuil, t_avant, t_apres, fs, refractaire=REFRACTAIRE):
         self.seuil = seuil
         self.fs = fs
@@ -228,6 +237,13 @@ class SDRWorker(QObject):
 
 
 class MainWindow(QMainWindow):
+    """
+    La classe MainWindow est la fenêtre principale de l'application. 
+    Elle gère l'affichage du signal audio, de la carte de corrélation et du clavier de piano.
+    Elle reçoit les résultats du worker SDR et met à jour l'interface en conséquence.
+    QMainWindow gère également la lecture des sons associés aux notes détectées et mesure la latence audio.
+    """
+
     def __init__(self):
         super().__init__()
         self._closing = False
@@ -349,7 +365,7 @@ class MainWindow(QMainWindow):
         if self.sound.isPlaying() and self.temps_impact_en_attente is not None:
             latence_ms = (time.monotonic() - self.temps_impact_en_attente) * 1000
             self.latence_label.setText(f"Délai : {latence_ms:.1f} ms")
-            print(f"Latence appui -> démarrage du son : {latence_ms:.1f} ms")
+            #print(f"Latence appui -> démarrage du son : {latence_ms:.1f} ms")
             self.temps_impact_en_attente = None
 
     def on_result(self, bloc, carte_corr, note, temps_impact):
